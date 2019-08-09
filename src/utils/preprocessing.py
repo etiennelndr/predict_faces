@@ -29,8 +29,8 @@ def input2discriminator(real_img_patches, real_seg_patches, fake_seg_patches, d_
     """
     # First of all, get the numpy random state
     rnd_state = np.random.get_state()
-    real = np.concatenate((real_img_patches, real_seg_patches), axis=3)
-    fake = np.concatenate((real_img_patches, fake_seg_patches), axis=3)
+    real = np.concatenate((real_img_patches, real_seg_patches), axis=-1)
+    fake = np.concatenate((real_img_patches, fake_seg_patches), axis=-1)
 
     d_x_batch = np.concatenate((real, fake), axis=0)
     # Shuffle this array
