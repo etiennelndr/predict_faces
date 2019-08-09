@@ -8,7 +8,9 @@ def main():
     """
     Main function.
     """
-    pass
+    model = PredictFace()
+    # Create the model
+    model.create_model()
 
 
 if __name__ == '__main__':
