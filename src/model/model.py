@@ -265,6 +265,9 @@ class PredictFace:
         K.clear_session()
         # Reset parameters
         self.model = None
+        self.gan = None
+        self.d = None
+        self.d_output_shape = None
         self.built = False
         self.training = False
         self.trained = False
@@ -323,12 +326,15 @@ class PredictFace:
         self.built = True
 
     def learn(self):
-        self.training = True
-
         if not self.built:
             raise ValueError("Build the model before using this method (PredictFace.create_model)")
 
+        # Set training to True
+        self.training = True
+
+        # Set training to False (training is over)
         self.training = False
+        # Set trained to True
         self.trained = True
 
     def predict(self):
