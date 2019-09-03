@@ -461,3 +461,5 @@ class PredictFace:
                     del (y_files[index])
             yield np.array(x), np.array(y)
 
+    def save(self):
+        raise NotImplementedError("Model.save is not implemented.")
