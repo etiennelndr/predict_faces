@@ -1,4 +1,5 @@
 try:
+    # Deep learning imports
     from keras.models import Model
     from keras.layers import Input, Activation, Dense
     from keras.layers.convolutional import Conv2D, Conv2DTranspose
@@ -8,17 +9,24 @@ try:
     from keras.optimizers import Adam
     from keras.losses import binary_crossentropy, categorical_crossentropy, mean_squared_error
     from keras.metrics import categorical_accuracy, binary_accuracy
+    from keras.preprocessing.image import img_to_array, load_img
     import keras.backend as K
-
     import tensorflow as tf
-
+    # Python modules
+    import os
+    import glob
+    import random
+    from skimage.transform import resize
+    import numpy as np
+    # Own modules, used for image preprocessing
     from utils import preprocessing as prep
+    from utils import processing
 except ImportError as err:
-    exit(err)
+    exit("{}: {}".format(__file__, err))
 
 
 class PredictFace:
-    def __init__(self, input_shape=(320, 608, 1), output_shape=(320, 608, 1), batch_size=8):
+    def __init__(self, input_shape=(320, 608, 1), output_shape=(320, 608, 1), batch_size=8, verbose=0):
         """
         Constructor.
 
@@ -44,6 +52,8 @@ class PredictFace:
         self.n_classes = self.output_shape[-1]
         # Batch size
         self.batch_size = batch_size
+        # Verbose
+        self.verbose = verbose
 
     def __del__(self):
         """
@@ -51,7 +61,6 @@ class PredictFace:
 
         :return: None
         """
-        print("PredictFace.__del__")
         self.rollback()
 
     def __generator(self):
@@ -199,7 +208,7 @@ class PredictFace:
 
         inputs = Input(self.input_shape[:2] + (self.n_classes * 2,),
                        name="discriminator_input",
-                       batch_shape=(self.batch_size,)
+                       batch_shape=(self.batch_size*2,)
                                    + self.input_shape[:2]
                                    + (self.n_classes * 2,))
 
@@ -305,18 +314,8 @@ class PredictFace:
             l_adv = tf.transpose(tf.multiply(l_adv, o), (2, 1, 0))
             return tf.add(0.1 * K.cast(l_adv, K.floatx()), K.cast(l_out, K.floatx()))
 
-        def gan_accuracy(y_true, y_pred):
-            """
-            Computes and returns the model accuracy.
-
-            :param y_true: real image
-            :param y_pred: predicted image
-            :return: model accuracy
-            """
-            return K.mean(K.equal(y_true, y_pred), axis=-1)
-
         # Compile the GAN
-        self.gan.compile(optimizer=Adam(lr=0.0001), loss=gan_loss, metrics=[gan_accuracy])
+        self.gan.compile(optimizer=Adam(lr=0.0001), loss=gan_loss, metrics=[binary_accuracy])
 
         # Get a summary of the previously created models
         self.model.summary()
@@ -325,17 +324,140 @@ class PredictFace:
 
         self.built = True
 
-    def learn(self):
+    def learn(self, epochs=10):
         if not self.built:
-            raise ValueError("Build the model before using this method (PredictFace.create_model)")
+            raise ValueError("Create and build the model before using this method (PredictFace.create_model)")
 
         # Set training to True
         self.training = True
+        # Get the folder containing the data
+        folder = os.path.join(os.path.realpath(__file__).split("src")[0], "data/CyberextruderUltimate")
+        # Verify folder existence
+        assert os.path.exists(folder), "{} folder doesn't exist.".format(train_dir)
 
-        # Set training to False (training is over)
+        nbr_of_imgs = 10205
+        train_size = nbr_of_imgs // self.batch_size
+
+        for epoch in range(epochs):
+            print("Epoch {}/{}".format(epoch + 1, epochs))
+            # Train the discriminator
+            data = self.create_data_generator(folder, randomize=True)
+            processing.make_trainable(self.d, True)
+            for i in range(train_size):
+                # Get the next `batch_size` images
+                real_imgs, real_preds = next(data)
+                # Transform and adapt them to train the discriminator
+                d_x_batch, d_y_batch = prep.input2discriminator(real_imgs,
+                                                                real_preds,
+                                                                self.model.predict(real_imgs,
+                                                                                   batch_size=self.batch_size),
+                                                                self.d_output_shape)
+                # Train the discriminator on this batch
+                d_loss, d_acc = self.d.train_on_batch(d_x_batch, d_y_batch)
+                if self.verbose >= 1:
+                    print("{}/{} -> g_loss = {}, g_acc = {}".format(i + 1, train_size, d_loss, d_acc))
+
+            # Train the GAN
+            data = self.create_data_generator(folder, randomize=True)
+            processing.make_trainable(self.d, False)
+            for i in range(train_size):
+                # Get the next `batch_size` images
+                real_imgs, real_preds = next(data)
+                # Transform and adapt them to train the generator
+                g_x_batch, g_y_batch = prep.input2gan(real_imgs,
+                                                      real_preds,
+                                                      self.d_output_shape)
+                # Train the generator on this batch
+                g_loss, g_acc = self.gan.train_on_batch(g_x_batch, g_y_batch)
+                if self.verbose >= 1:
+                    print("{}/{} -> g_loss = {}, g_acc = {}".format(i + 1, train_size, g_loss, g_acc))
+
+        # Set `training` to False (training is over)
         self.training = False
-        # Set trained to True
+        # Set `trained` to True
         self.trained = True
 
-    def predict(self):
-        return None
+    def predict(self, data):
+        return self.model.predict(data)
+
+    def create_data_generator(self, folder, batch_size=None, randomize=False, training=True):
+        """
+        Creates a generator which contains a tuple of two lists: one
+        for the input images and the other one for the segmented
+        (aka labelled) images. The length of these lists is the same
+        and is equal to batch_size.
+
+        :param folder: folder in which input and labelled images are.
+        :param batch_size: the batch size, must be greater than 1.
+        :param randomize: use a random list of data
+        :param training: set `training` to True if it is in the training size. Otherwise, set
+        `training` to False.
+        """
+        if not batch_size:
+            batch_size = self.batch_size
+
+        if training and batch_size <= 1:
+            raise ValueError("During training step, batch size must be greater than 1, not {}.".format(batch_size))
+
+        x_dir = os.path.join(folder, "x")
+        y_dir = os.path.join(folder, "y")
+
+        assert os.path.exists(x_dir), "{} doesn't exist.".format(x_dir)
+        assert os.path.exists(y_dir), "{} doesn't exist.".format(y_dir)
+
+        xfiles = glob.glob(os.path.join(x_dir, "*.jpg"))
+        yfiles = glob.glob(os.path.join(y_dir, "*.jpg"))
+        # Number of files
+        nbr_files = len(xfiles)
+
+        assert nbr_files == len(yfiles), "Number of x files ({}) is not equal to the number of y files ({}).".format(
+            nbr_files,
+            len(yfiles)
+        )
+
+        # Let's begin the training/validation with the first file
+        index = 0
+        # Copy
+        x_files = xfiles.copy()
+        y_files = yfiles.copy()
+        while True:
+            x, y = list(), list()
+            for i in range(batch_size):
+                # Get a new index
+                if randomize:
+                    if not x_files:
+                        x_files = xfiles.copy()
+                        y_files = yfiles.copy()
+                    index = x_files.index(random.choice(x_files))
+                else:
+                    index = (index + 1) % nbr_files
+
+                # MUST be true (files must have the same name)
+                assert os.path.splitext(os.path.basename(x_files[index]))[0] \
+                       == os.path.splitext(os.path.basename(y_files[index]))[0], \
+                    "({}) is not the labelled image of ({}).".format(
+                        y_files[index],
+                        x_files[index]
+                    )
+                # Load images and transform them to arrays
+                x_img = img_to_array(load_img(x_files[index], color_mode="grayscale"))
+                y_img = img_to_array(load_img(y_files[index], color_mode="grayscale"))
+                # Resize images
+                x_img = resize(x_img, self.input_shape, preserve_range=True, anti_aliasing=True)
+                y_img = resize(y_img, self.input_shape, preserve_range=True, anti_aliasing=True)
+                # Change the type to `int`
+                x_img = x_img.astype(int)
+                y_img = y_img.astype(int)
+                # Reduce data values between [0;1]
+                x_img = x_img.astype(K.floatx()) / 255.
+                y_img = y_img.astype(K.floatx()) / 255.
+                # Append these data
+                x.append(x_img)
+                y.append(y_img)
+
+                if randomize:
+                    # Delete these elements
+                    del (x_files[index])
+                    del (y_files[index])
+            yield np.array(x), np.array(y)
+
