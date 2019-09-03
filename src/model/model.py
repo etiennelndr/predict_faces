@@ -461,8 +461,25 @@ class PredictFace:
                     del (y_files[index])
             yield np.array(x), np.array(y)
 
-    def save(self):
+    def save(self, name=None):
         if not self.built or not self.trained:
             raise ValueError("Build and train this model before saving this model.")
 
-        raise NotImplementedError("Model.save is not implemented.")
+        if not name:
+            name = "default"
+
+        # Folder in which both files will be stored
+        folder = name
+        # Create this folder
+        os.makedirs(folder, exist_ok=True)
+
+        architecture_file_path = name + '.json'
+        print('\t - Architecture of the neural network: ' + architecture_file_path)
+
+        with open(os.path.join(folder, architecture_file_path), 'wt') as json_file:
+            architecture = self.model.to_json()
+            json_file.write(architecture)
+
+        weights_file_path = os.path.join(folder, name + ".hdf5")
+        print('\t - Weights of synaptic connections: ' + weights_file_path)
+        self.model.save(weights_file_path)
