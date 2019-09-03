@@ -462,4 +462,7 @@ class PredictFace:
             yield np.array(x), np.array(y)
 
     def save(self):
+        if not self.built or not self.trained:
+            raise ValueError("Build and train this model before saving this model.")
+        
         raise NotImplementedError("Model.save is not implemented.")
