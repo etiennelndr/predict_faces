@@ -486,3 +486,37 @@ class PredictFace:
         weights_file_path = os.path.join(folder, name + ".hdf5")
         print('\t - Weights of synaptic connections: ' + weights_file_path)
         self.model.save(weights_file_path)
+
+    def load(self, architecture_file_name, weights_file_name, name=None):
+        """
+        Opens and loads an existing model.
+
+        :param architecture_file_name:
+        :param weights_file_name:
+        :param name:
+        :raises ValueError: bad extension
+        :raises FileNotFoundError: file doesn't exist
+        """
+        if name:
+            architecture_file_name = name + ".json"
+            weights_file_name = name + ".hdf5"
+
+        if not exists(architecture_file_name):
+            raise FileNotFoundError(architecture_file_name + " doesn't exist.")
+        elif architecture_file_name[-4:] != "json":
+            raise ValueError("architecture file extension MUST BE json.")
+
+        if not exists(weights_file_name):
+            raise FileNotFoundError(weights_file_name + " doesn't exist.")
+        elif weights_file_name[-4:] != "hdf5":
+            raise ValueError("weights file extension MUST BE hdf5.")
+
+        json_file = open(architecture_file_name)
+        architecture = json_file.read()
+        json_file.close()
+
+        # Create a model from a json file
+        self.model = model_from_json(architecture)
+
+        # Load weights into the model
+        self.model.load_weights(weights_file_name)
