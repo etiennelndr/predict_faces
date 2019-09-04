@@ -355,7 +355,7 @@ class PredictFace:
                 # Train the discriminator on this batch
                 d_loss, d_acc = self.d.train_on_batch(d_x_batch, d_y_batch)
                 if self.verbose >= 1:
-                    print("{}/{} -> g_loss = {}, g_acc = {}".format(i + 1, train_size, d_loss, d_acc))
+                    print("{}/{} -> d_loss = {}, d_acc = {}".format(i + 1, train_size, d_loss, d_acc))
 
             # Train the GAN
             data = self.create_data_generator(folder, randomize=True)
