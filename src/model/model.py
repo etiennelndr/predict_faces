@@ -372,6 +372,9 @@ class PredictFace:
                 if self.verbose >= 1:
                     print("{}/{} -> g_loss = {}, g_acc = {}".format(i + 1, train_size, g_loss, g_acc))
 
+            # Save the current state of the model
+            self.save("gan_{}-{}".format(epoch+1, epochs))
+
         # Set `training` to False (training is over)
         self.training = False
         # Set `trained` to True
